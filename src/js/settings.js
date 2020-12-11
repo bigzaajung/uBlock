@@ -1,7 +1,7 @@
 /*******************************************************************************
 
     uBlock Origin - a browser extension to block requests.
-    Copyright (C) 2014-2016 Raymond Hill
+    Copyright (C) 2014-present Raymond Hill
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,30 +21,23 @@
 
 /* global uDom */
 
-/******************************************************************************/
-
-(function() {
-
 'use strict';
 
 /******************************************************************************/
 
-var messaging = vAPI.messaging;
+(( ) => {
 
 /******************************************************************************/
 
-var handleImportFilePicker = function() {
-    var file = this.files[0];
-    if ( file === undefined || file.name === '' ) {
-        return;
-    }
-    if ( file.type.indexOf('text') !== 0 ) {
-        return;
-    }
-    var filename = file.name;
+const handleImportFilePicker = function() {
+    const file = this.files[0];
+    if ( file === undefined || file.name === '' ) { return; }
+    if ( file.type.indexOf('text') !== 0 ) { return; }
 
-    var fileReaderOnLoadHandler = function() {
-        var userData;
+    const filename = file.name;
+
+    const fileReaderOnLoadHandler = function() {
+        let userData;
         try {
             userData = JSON.parse(this.result);
             if ( typeof userData !== 'object' ) {
@@ -53,10 +46,16 @@ var handleImportFilePicker = function() {
             if ( typeof userData.userSettings !== 'object' ) {
                 throw 'Invalid';
             }
-            if ( typeof userData.netWhitelist !== 'string' ) {
+            if (
+                Array.isArray(userData.whitelist) === false &&
+                typeof userData.netWhitelist !== 'string'
+            ) {
                 throw 'Invalid';
             }
-            if ( typeof userData.filterLists !== 'object' ) {
+            if (
+                typeof userData.filterLists !== 'object' &&
+                Array.isArray(userData.selectedFilterLists) === false
+            ) {
                 throw 'Invalid';
             }
         }
@@ -67,31 +66,27 @@ var handleImportFilePicker = function() {
             window.alert(vAPI.i18n('aboutRestoreDataError'));
             return;
         }
-        var time = new Date(userData.timeStamp);
-        var msg = vAPI.i18n('aboutRestoreDataConfirm')
-                      .replace('{{time}}', time.toLocaleString());
-        var proceed = window.confirm(msg);
-        if ( proceed ) {
-            messaging.send(
-                'dashboard',
-                {
-                    what: 'restoreUserData',
-                    userData: userData,
-                    file: filename
-                }
-            );
-        }
+        const time = new Date(userData.timeStamp);
+        const msg = vAPI.i18n('aboutRestoreDataConfirm')
+                        .replace('{{time}}', time.toLocaleString());
+        const proceed = window.confirm(msg);
+        if ( proceed !== true ) { return; }
+        vAPI.messaging.send('dashboard', {
+            what: 'restoreUserData',
+            userData,
+            file: filename,
+        });
     };
 
-    var fr = new FileReader();
+    const fr = new FileReader();
     fr.onload = fileReaderOnLoadHandler;
     fr.readAsText(file);
 };
 
 /******************************************************************************/
 
-var startImportFilePicker = function() {
-    var input = document.getElementById('restoreFilePicker');
+const startImportFilePicker = function() {
+    const input = document.getElementById('restoreFilePicker');
     // Reset to empty string, this will ensure an change event is properly
     // triggered if the user pick a file, even if it is the same as the last
     // one picked.
@@ -101,19 +96,52 @@ var startImportFilePicker = function() {
 
 /******************************************************************************/
 
-var exportToFile = function() {
-    messaging.send('dashboard', { what: 'backupUserData' }, onLocalDataReceived);
+const exportToFile = async function() {
+    const response = await vAPI.messaging.send('dashboard', {
+        what: 'backupUserData',
+    });
+    if (
+        response instanceof Object === false ||
+        response.userData instanceof Object === false
+    ) {
+        return;
+    }
+    vAPI.download({
+        'url': 'data:text/plain;charset=utf-8,' +
+               encodeURIComponent(JSON.stringify(response.userData, null, '  ')),
+        'filename': response.localData.lastBackupFile
+    });
+    onLocalDataReceived(response.localData);
 };
 
 /******************************************************************************/
 
-var onLocalDataReceived = function(details) {
-    uDom('#localData > ul > li:nth-of-type(1)').text(
-        vAPI.i18n('settingsStorageUsed').replace('{{value}}', details.storageUsed.toLocaleString())
-    );
+const onLocalDataReceived = function(details) {
+    let v, unit;
+    if ( typeof details.storageUsed === 'number' ) {
+        v = details.storageUsed;
+        if ( v < 1e3 ) {
+            unit = 'genericBytes';
+        } else if ( v < 1e6 ) {
+            v /= 1e3;
+            unit = 'KB';
+        } else if ( v < 1e9 ) {
+            v /= 1e6;
+            unit = 'MB';
+        } else {
+            v /= 1e9;
+            unit = 'GB';
+        }
+    } else {
+        v = '?';
+        unit = '';
+    }
+    uDom.nodeFromId('storageUsed').textContent =
+        vAPI.i18n('storageUsed')
+            .replace('{{value}}', v.toLocaleString(undefined, { maximumSignificantDigits: 3 }))
+            .replace('{{unit}}', unit && vAPI.i18n(unit) || '');
 
-    var elem, dt;
-    var timeOptions = {
+    const timeOptions = {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
@@ -122,57 +150,72 @@ var onLocalDataReceived = function(details) {
         minute: 'numeric',
         timeZoneName: 'short'
     };
-    var lastBackupFile = details.lastBackupFile || '';
+
+    const lastBackupFile = details.lastBackupFile || '';
     if ( lastBackupFile !== '' ) {
-        dt = new Date(details.lastBackupTime);
-        uDom('#localData > ul > li:nth-of-type(2) > ul > li:nth-of-type(1)').text(dt.toLocaleString('fullwide', timeOptions));
-        //uDom('#localData > ul > li:nth-of-type(2) > ul > li:nth-of-type(2)').text(lastBackupFile);
-        uDom('#localData > ul > li:nth-of-type(2)').css('display', '');
+        const dt = new Date(details.lastBackupTime);
+        const text = vAPI.i18n('settingsLastBackupPrompt');
+        const node = uDom.nodeFromId('settingsLastBackupPrompt');
+        node.textContent = text + '\xA0' + dt.toLocaleString('fullwide', timeOptions);
+        node.style.display = '';
     }
 
-    var lastRestoreFile = details.lastRestoreFile || '';
-    elem = uDom('#localData > p:nth-of-type(3)');
+    const lastRestoreFile = details.lastRestoreFile || '';
     if ( lastRestoreFile !== '' ) {
-        dt = new Date(details.lastRestoreTime);
-        uDom('#localData > ul > li:nth-of-type(3) > ul > li:nth-of-type(1)').text(dt.toLocaleString('fullwide', timeOptions));
-        uDom('#localData > ul > li:nth-of-type(3) > ul > li:nth-of-type(2)').text(lastRestoreFile);
-        uDom('#localData > ul > li:nth-of-type(3)').css('display', '');
+        const dt = new Date(details.lastRestoreTime);
+        const text = vAPI.i18n('settingsLastRestorePrompt');
+        const node = uDom.nodeFromId('settingsLastRestorePrompt');
+        node.textContent = text + '\xA0' + dt.toLocaleString('fullwide', timeOptions);
+        node.style.display = '';
     }
 
     if ( details.cloudStorageSupported === false ) {
-        uDom('#cloud-storage-enabled').attr('disabled', '');
+        uDom('[data-setting-name="cloudStorageEnabled"]').attr('disabled', '');
+    }
+
+    if ( details.privacySettingsSupported === false ) {
+        uDom('[data-setting-name="prefetchingDisabled"]').attr('disabled', '');
+        uDom('[data-setting-name="hyperlinkAuditingDisabled"]').attr('disabled', '');
+        uDom('[data-setting-name="webrtcIPAddressHidden"]').attr('disabled', '');
     }
 };
 
 /******************************************************************************/
 
-var resetUserData = function() {
-    var msg = vAPI.i18n('aboutResetDataConfirm');
-    var proceed = window.confirm(msg);
-    if ( proceed ) {
-        messaging.send('dashboard', { what: 'resetUserData' });
-    }
+const resetUserData = function() {
+    const msg = vAPI.i18n('aboutResetDataConfirm');
+    const proceed = window.confirm(msg);
+    if ( proceed !== true ) { return; }
+    vAPI.messaging.send('dashboard', {
+        what: 'resetUserData',
+    });
 };
 
 /******************************************************************************/
 
-var changeUserSettings = function(name, value) {
-    messaging.send(
-        'dashboard',
-        {
-            what: 'userSettings',
-            name: name,
-            value: value
-        }
+const synchronizeDOM = function() {
+    document.body.classList.toggle(
+        'advancedUser',
+        uDom.nodeFromSelector('[data-setting-name="advancedUserEnabled"]').checked === true
     );
 };
 
 /******************************************************************************/
 
-var onInputChanged = function(ev) {
-    var input = ev.target;
-    var name = this.getAttribute('data-setting-name');
-    var value = input.value;
+const changeUserSettings = function(name, value) {
+    vAPI.messaging.send('dashboard', {
+        what: 'userSettings',
+        name,
+        value,
+    });
+};
+
+/******************************************************************************/
+
+const onInputChanged = function(ev) {
+    const input = ev.target;
+    const name = this.getAttribute('data-setting-name');
+    let value = input.value;
     if ( name === 'largeMediaSize' ) {
         value = Math.min(Math.max(Math.floor(parseInt(value, 10) || 0), 0), 1000000);
     }
@@ -187,7 +230,7 @@ var onInputChanged = function(ev) {
 // Workaround for:
 // https://github.com/gorhill/uBlock/issues/1448
 
-var onPreventDefault = function(ev) {
+const onPreventDefault = function(ev) {
     ev.target.focus();
     ev.preventDefault();
 };
@@ -196,7 +239,7 @@ var onPreventDefault = function(ev) {
 
 // TODO: use data-* to declare simple settings
 
-var onUserSettingsReceived = function(details) {
+const onUserSettingsReceived = function(details) {
     uDom('[data-setting-type="bool"]').forEach(function(uNode) {
         uNode.prop('checked', details[uNode.attr('data-setting-name')] === true)
              .on('change', function() {
@@ -204,10 +247,11 @@ var onUserSettingsReceived = function(details) {
                         this.getAttribute('data-setting-name'),
                         this.checked
                     );
+                    synchronizeDOM();
                 });
     });
 
-    uDom('[data-setting-name="noLargeMedia"] ~ label:first-of-type > input[type="number"]')
+    uDom('[data-i18n="settingsNoLargeMediaPrompt"] > input[type="number"]')
         .attr('data-setting-name', 'largeMediaSize')
         .attr('data-setting-type', 'input');
 
@@ -217,18 +261,31 @@ var onUserSettingsReceived = function(details) {
              .on('click', onPreventDefault);
     });
 
-    uDom('#export').on('click', exportToFile);
+    uDom('#export').on('click', ( ) => { exportToFile(); });
     uDom('#import').on('click', startImportFilePicker);
     uDom('#reset').on('click', resetUserData);
     uDom('#restoreFilePicker').on('change', handleImportFilePicker);
+
+    synchronizeDOM();
 };
 
 /******************************************************************************/
 
-uDom.onLoad(function() {
-    messaging.send('dashboard', { what: 'userSettings' }, onUserSettingsReceived);
-    messaging.send('dashboard', { what: 'getLocalData' }, onLocalDataReceived);
+vAPI.messaging.send('dashboard', { what: 'userSettings' }).then(result => {
+    onUserSettingsReceived(result);
 });
+
+vAPI.messaging.send('dashboard', { what: 'getLocalData' }).then(result => {
+    onLocalDataReceived(result);
+});
+
+// https://github.com/uBlockOrigin/uBlock-issues/issues/591
+document.querySelector(
+    '[data-i18n-title="settingsAdvancedUserSettings"]'
+).addEventListener(
+    'click',
+    self.uBlockDashboard.openOrSelectPage
+);
 
 /******************************************************************************/
 
