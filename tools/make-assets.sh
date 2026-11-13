@@ -2,30 +2,41 @@
 #
 # This script assumes a linux environment
 
+set -e
+
 DES=$1/assets
 
-printf "*** Packaging assets in $DES... "
-
-if [ -n "${TRAVIS_TAG}" ]; then
-  pushd .. > /dev/null
-  git clone https://github.com/uBlockOrigin/uAssets.git
-  popd > /dev/null
-fi
+echo "*** Packaging assets in $DES... "
 
 rm -rf $DES
-mkdir $DES
+cp -R ./assets $DES/
+
+VERSION=$(cat ./dist/version)
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "*** Removing $DES/assets.dev.json"
+    rm -f $DES/assets.dev.json
+else
+    echo "*** Removing $DES/assets.json"
+    rm -f $DES/assets.json
+fi
 
 mkdir $DES/thirdparties
-cp -R ../uAssets/thirdparties/easylist-downloads.adblockplus.org $DES/thirdparties/
-cp -R ../uAssets/thirdparties/mirror1.malwaredomains.com         $DES/thirdparties/
-cp -R ../uAssets/thirdparties/pgl.yoyo.org                       $DES/thirdparties/
-cp -R ../uAssets/thirdparties/publicsuffix.org                   $DES/thirdparties/
-cp -R ../uAssets/thirdparties/www.malwaredomainlist.com          $DES/thirdparties/
+
+ASSETS_MAIN=dist/build/uAssets/main
+ASSETS_PROD=dist/build/uAssets/prod
+
+cp -R $ASSETS_MAIN/thirdparties/pgl.yoyo.org     $DES/thirdparties/
+cp -R $ASSETS_MAIN/thirdparties/publicsuffix.org $DES/thirdparties/
+cp -R $ASSETS_MAIN/thirdparties/urlhaus-filter   $DES/thirdparties/
+
+mkdir -p $DES/thirdparties/easylist
+cp $ASSETS_PROD/thirdparties/easylist.txt $DES/thirdparties/easylist/
+cp $ASSETS_PROD/thirdparties/easyprivacy.txt $DES/thirdparties/easylist/
 
 mkdir $DES/ublock
-cp -R ../uAssets/filters/*                                       $DES/ublock/
-cp -R ./assets/ublock/filter-lists.json                          $DES/ublock/
-
-cp ../uAssets/checksums/ublock0.txt                              $DES/checksums.txt
-
-echo "done."
+cp $ASSETS_PROD/filters/badlists.txt $DES/ublock/badlists.txt
+cp $ASSETS_PROD/filters/badware.min.txt $DES/ublock/badware.min.txt
+cp $ASSETS_PROD/filters/filters.min.txt $DES/ublock/filters.min.txt
+cp $ASSETS_PROD/filters/privacy.min.txt $DES/ublock/privacy.min.txt
+cp $ASSETS_PROD/filters/quick-fixes.min.txt $DES/ublock/quick-fixes.min.txt
+cp $ASSETS_PROD/filters/unbreak.min.txt $DES/ublock/unbreak.min.txt

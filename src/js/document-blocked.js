@@ -1,7 +1,7 @@
 /*******************************************************************************
 
-    uBlock - a browser extension to block requests.
-    Copyright (C) 2015 Raymond Hill
+    uBlock Origin - a comprehensive, efficient content blocker
+    Copyright (C) 2015-present Raymond Hill
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,272 +19,271 @@
     Home: https://github.com/gorhill/uBlock
 */
 
-/* global uDom */
+import { dom, qs$ } from './dom.js';
+import { i18n, i18n$ } from './i18n.js';
+import { faIconsInit } from './fa-icons.js';
 
 /******************************************************************************/
 
-(function() {
+const messaging = vAPI.messaging;
+const details = {};
 
-'use strict';
-
-/******************************************************************************/
-
-var messaging = vAPI.messaging;
-var details = {};
-
-(function() {
-    var matches = /details=([^&]+)/.exec(window.location.search);
-    if ( matches === null ) {
-        return;
+{
+    const matches = /details=([^&]+)/.exec(window.location.search);
+    if ( matches !== null ) {
+        Object.assign(details, JSON.parse(decodeURIComponent(matches[1])));
     }
-    details = JSON.parse(atob(matches[1]));
-})();
+}
 
 /******************************************************************************/
 
-(function() {
-    var onReponseReady = function(response) {
-        if ( typeof response !== 'object' ) {
-            return;
-        }
-        var lists;
-        for ( var rawFilter in response ) {
-            if ( response.hasOwnProperty(rawFilter) === false ) {
-                continue;
-            }
+const urlToFragment = raw => {
+    try {
+        const fragment = new DocumentFragment();
+        const url = new URL(raw);
+        const href = url.href;
+        const hn = url.hostname;
+        const i = href.indexOf(hn);
+        const b = document.createElement('b');
+        b.append(hn);
+        fragment.append(href.slice(0,i), b, href.slice(i+hn.length));
+        return fragment;
+    } catch {
+    }
+    return raw;
+};
+
+/******************************************************************************/
+
+dom.clear('#theURL > p > span:first-of-type');
+qs$('#theURL > p > span:first-of-type').append(urlToFragment(details.url));
+
+/******************************************************************************/
+
+const lookupFilterLists = async ( ) => {
+    const response = await messaging.send('documentBlocked', {
+        what: 'listsFromNetFilter',
+        rawFilter: details.fs,
+    });
+    if ( response instanceof Object === false ) { return; }
+    let lists;
+    for ( const rawFilter in response ) {
+        if ( Object.hasOwn(response, rawFilter) ) {
             lists = response[rawFilter];
             break;
         }
-        
-        if ( Array.isArray(lists) === false || lists.length === 0 ) {
-            return;
-        }
-        var parent = uDom.nodeFromSelector('#whyex > span:nth-of-type(2)');
-        var separator = '';
-        var entry, url, node;
-        for ( var i = 0; i < lists.length; i++ ) {
-            entry = lists[i];
-            if ( separator !== '' ) {
-                parent.appendChild(document.createTextNode(separator));
-            }
-            url = entry.supportURL;
-            if ( typeof url === 'string' && url !== '' ) {
-                node = document.createElement('a');
-                node.textContent = entry.title;
-                node.setAttribute('href', url);
-                node.setAttribute('target', '_blank');
-            } else {
-                node = document.createTextNode(entry.title);
-            }
-            parent.appendChild(node);
-            separator = ' \u2022 ';
-        }
-        uDom.nodeFromId('whyex').style.removeProperty('display');
-    };
-
-    messaging.send(
-        'documentBlocked',
-        {
-            what: 'listsFromNetFilter',
-            compiledFilter: details.fc,
-            rawFilter: details.fs
-        },
-        onReponseReady
-    );
-})();
-
-/******************************************************************************/
-
-var getTargetHostname = function() {
-    var hostname = details.hn;
-    var elem = document.querySelector('#proceed select');
-    if ( elem !== null ) {
-        hostname = elem.value;
     }
-    return hostname;
+    return lists;
 };
 
 /******************************************************************************/
 
-var proceedToURL = function() {
-    window.location.replace(details.url);
-};
-
-/******************************************************************************/
-
-var proceedTemporary = function() {
-    messaging.send(
-        'documentBlocked',
-        {
-            what: 'temporarilyWhitelistDocument',
-            hostname: getTargetHostname()
-        },
-        proceedToURL
-    );
-};
-
-/******************************************************************************/
-
-var proceedPermanent = function() {
-    messaging.send(
-        'documentBlocked',
-        {
-            what: 'toggleHostnameSwitch',
-            name: 'no-strict-blocking',
-            hostname: getTargetHostname(),
-            deep: true,
-            state: true
-        },
-        proceedToURL
-    );
-};
-
-/******************************************************************************/
-
-(function() {
-    var matches = /^(.*)\{\{hostname\}\}(.*)$/.exec(vAPI.i18n('docblockedProceed'));
-    if ( matches === null ) {
-        return;
+if ( typeof details.to === 'string' && details.to.length !== 0 ) {
+    const fragment = new DocumentFragment();
+    const text = i18n$('docblockedRedirectPrompt');
+    const linkPlaceholder = '{{url}}';
+    let pos = text.indexOf(linkPlaceholder);
+    if ( pos !== -1 ) {
+        const link = document.createElement('a');
+        link.href = details.to;
+        dom.cl.add(link, 'code');
+        link.append(urlToFragment(details.to)); 
+        fragment.append(
+            text.slice(0, pos),
+            link,
+            text.slice(pos + linkPlaceholder.length)
+        );
+        qs$('#urlskip').append(fragment);
+        dom.attr('#urlskip', 'hidden', null);
     }
-    var proceed = uDom('#proceedTemplate').clone();
-    proceed.descendants('span:nth-of-type(1)').text(matches[1]);
-    proceed.descendants('span:nth-of-type(4)').text(matches[2]);
-
-    if ( details.hn === details.dn ) {
-        proceed.descendants('span:nth-of-type(2)').remove();
-        proceed.descendants('.hn').text(details.hn);
-    } else {
-        proceed.descendants('span:nth-of-type(3)').remove();
-        proceed.descendants('.hn').text(details.hn).attr('value', details.hn);
-        proceed.descendants('.dn').text(details.dn).attr('value', details.dn);
-    }
-
-    uDom('#proceed').append(proceed);
-})();
-
-/******************************************************************************/
-
-uDom.nodeFromSelector('#theURL > p').textContent = details.url;
-uDom.nodeFromId('why').textContent = details.fs;
+}
 
 /******************************************************************************/
 
 // https://github.com/gorhill/uBlock/issues/691
-// Parse URL to extract as much useful information as possible. This is useful
-// to assist the user in deciding whether to navigate to the web page.
+//   Parse URL to extract as much useful information as possible. This is
+//   useful to assist the user in deciding whether to navigate to the web page.
+(( ) => {
+    if ( typeof URL !== 'function' ) { return; }
 
-(function() {
-    if ( typeof URL !== 'function' ) {
-        return;
-    }
+    const reURL = /^https?:\/\//;
 
-    var reURL = /^https?:\/\//;
-
-    var liFromParam = function(name, value) {
+    const liFromParam = function(name, value) {
         if ( value === '' ) {
             value = name;
             name = '';
         }
-        var li = document.createElement('li');
-        var span = document.createElement('span');
-        span.textContent = name;
+        const li = dom.create('li');
+        let span = dom.create('span');
+        dom.text(span, name);
         li.appendChild(span);
         if ( name !== '' && value !== '' ) {
             li.appendChild(document.createTextNode(' = '));
         }
-        span = document.createElement('span');
+        span = dom.create('span');
         if ( reURL.test(value) ) {
-            var a = document.createElement('a');
-            a.href = a.textContent = value;
+            const a = dom.create('a');
+            dom.attr(a, 'href', value);
+            dom.text(a, value);
             span.appendChild(a);
         } else {
-            span.textContent = value;
+            dom.text(span, value);
         }
         li.appendChild(span);
         return li;
     };
 
-    var safeDecodeURIComponent = function(s) {
+    // https://github.com/uBlockOrigin/uBlock-issues/issues/1649
+    //   Limit recursion.
+    const renderParams = function(parentNode, rawURL, depth = 0) {
+        let url;
         try {
-            s = decodeURIComponent(s);
-        } catch (ex) {
-        }
-        return s;
-    };
-
-    var renderParams = function(parentNode, rawURL) {
-        var a = document.createElement('a');
-        a.href = rawURL;
-        if ( a.search.length === 0 ) {
+            url = new URL(rawURL);
+        } catch {
             return false;
         }
 
-        var pos = rawURL.indexOf('?');
-        var li = liFromParam(
-            vAPI.i18n('docblockedNoParamsPrompt'),
-            rawURL.slice(0, pos)
-        );
+        const search = url.search.slice(1);
+        if ( search === '' ) { return false; }
+
+        url.search = '';
+        const li = liFromParam(i18n$('docblockedNoParamsPrompt'), url.href);
         parentNode.appendChild(li);
 
-        var params = a.search.slice(1).split('&');
-        var param, name, value, ul;
-        for ( var i = 0; i < params.length; i++ ) {
-            param = params[i];
-            pos = param.indexOf('=');
-            if ( pos === -1 ) {
-                pos = param.length;
-            }
-            name = safeDecodeURIComponent(param.slice(0, pos));
-            value = safeDecodeURIComponent(param.slice(pos + 1));
-            li = liFromParam(name, value);
-            if ( reURL.test(value) ) {
-                ul = document.createElement('ul');
-                renderParams(ul, value);
+        const params = new self.URLSearchParams(search);
+        for ( const [ name, value ] of params ) {
+            const li = liFromParam(name, value);
+            if ( depth < 2 && reURL.test(value) ) {
+                const ul = dom.create('ul');
+                renderParams(ul, value, depth + 1);
                 li.appendChild(ul);
             }
             parentNode.appendChild(li);
         }
+
         return true;
     };
 
-    if ( renderParams(uDom.nodeFromId('parsed'), details.url) === false ) {
+    if ( renderParams(qs$('#parsed'), details.url) === false ) {
         return;
     }
 
-    var toggler = document.createElement('span');
-    toggler.className = 'fa';
-    uDom('#theURL > p').append(toggler);
+    dom.cl.remove('#toggleParse', 'hidden');
 
-    uDom(toggler).on('click', function() {
-        var cl = uDom.nodeFromId('theURL').classList;
-        cl.toggle('collapsed');
+    dom.on('#toggleParse', 'click', ( ) => {
+        dom.cl.toggle('#theURL', 'collapsed');
         vAPI.localStorage.setItem(
             'document-blocked-expand-url',
-            (cl.contains('collapsed') === false).toString()
+            (dom.cl.has('#theURL', 'collapsed') === false).toString()
         );
     });
 
-    uDom.nodeFromId('theURL').classList.toggle(
-        'collapsed',
-        vAPI.localStorage.getItem('document-blocked-expand-url') !== 'true'
-    );
+    vAPI.localStorage.getItemAsync('document-blocked-expand-url').then(value => {
+        dom.cl.toggle('#theURL', 'collapsed', value !== 'true' && value !== true);
+    });
 })();
 
 /******************************************************************************/
+
+// https://www.reddit.com/r/uBlockOrigin/comments/breeux/close_this_window_doesnt_work_on_firefox/
 
 if ( window.history.length > 1 ) {
-    uDom('#back').on('click', function() { window.history.back(); });
-    uDom('#bye').css('display', 'none');
+    dom.on('#back', 'click', ( ) => {
+        window.history.back();
+    });
+    qs$('#bye').style.display = 'none';
 } else {
-    uDom('#bye').on('click', function() { window.close(); });
-    uDom('#back').css('display', 'none');
+    dom.on('#bye', 'click', ( ) => {
+        messaging.send('documentBlocked', {
+            what: 'closeThisTab',
+        });
+    });
+    qs$('#back').style.display = 'none';
 }
-
-uDom('#proceedTemporary').attr('href', details.url).on('click', proceedTemporary);
-uDom('#proceedPermanent').attr('href', details.url).on('click', proceedPermanent);
 
 /******************************************************************************/
 
-})();
+const proceedToURL = function() {
+    window.location.replace(details.url);
+};
+
+const proceedTemporary = async function() {
+    await messaging.send('documentBlocked', {
+        what: 'temporarilyWhitelistDocument',
+        hostname: details.hn,
+    });
+    proceedToURL();
+};
+
+const proceedPermanent = async function() {
+    await messaging.send('documentBlocked', {
+        what: 'toggleHostnameSwitch',
+        name: 'no-strict-blocking',
+        hostname: details.hn,
+        deep: true,
+        state: true,
+        persist: true,
+    });
+    proceedToURL();
+};
+
+dom.on('#disableWarning', 'change', ev => {
+    const checked = ev.target.checked;
+    dom.cl.toggle('[data-i18n="docblockedBack"]', 'disabled', checked);
+    dom.cl.toggle('[data-i18n="docblockedClose"]', 'disabled', checked);
+});
+
+dom.on('#proceed', 'click', ( ) => {
+    if ( qs$('#disableWarning').checked ) {
+        proceedPermanent();
+    } else {
+        proceedTemporary();
+    }
+});
+
+lookupFilterLists().then((lists = []) => {
+    let reason = details.reason;
+    if ( Boolean(reason) === false ) {
+        reason = lists.reduce((a, b) => a || b.reason, undefined);
+    }
+    if ( reason ) {
+        const msg = i18n$(`docblockedReason${reason.charAt(0).toUpperCase()}${reason.slice(1)}`);
+        if ( msg ) { reason = msg };
+    }
+    const why = qs$(reason ? 'template.why-reason' : 'template.why')
+        .content
+        .cloneNode(true);
+    i18n.render(why);
+    dom.text(qs$(why, '.why'), details.fs);
+    if ( reason ) {
+        dom.text(qs$(why, 'summary'), `${i18n$('docblockedReasonLabel')} ${reason}`);
+    }
+    qs$('#why').append(why);
+    dom.cl.remove(dom.body, 'loading');
+
+    if ( lists.length === 0 ) { return; }
+
+    const whyExtra = qs$('template.why-extra').content.cloneNode(true);
+    i18n.render(whyExtra);
+
+    const listTemplate = qs$('template.filterList');
+    const parent = qs$(whyExtra, '.why-extra');
+    let separator = '';
+    for ( const list of lists ) {
+        const listElem = listTemplate.content.cloneNode(true);
+        const sourceElem = qs$(listElem, '.filterListSource');
+        sourceElem.href += encodeURIComponent(list.assetKey);
+        sourceElem.append(i18n.patchUnicodeFlags(list.title));
+        if ( typeof list.supportURL === 'string' && list.supportURL !== '' ) {
+            const supportElem = qs$(listElem, '.filterListSupport');
+            dom.attr(supportElem, 'href', list.supportURL);
+            dom.cl.remove(supportElem, 'hidden');
+        }
+        parent.append(separator, listElem);
+        separator = '\u00A0\u2022\u00A0';
+    }
+    faIconsInit(whyExtra);
+    qs$('#why .why').after(whyExtra);
+});
 
 /******************************************************************************/

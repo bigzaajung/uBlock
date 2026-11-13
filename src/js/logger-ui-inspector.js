@@ -1,7 +1,7 @@
 /*******************************************************************************
 
-    uBlock Origin - a browser extension to block requests.
-    Copyright (C) 2015-2016 Raymond Hill
+    uBlock Origin - a comprehensive, efficient content blocker
+    Copyright (C) 2015-present Raymond Hill
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,111 +19,177 @@
     Home: https://github.com/gorhill/uBlock
 */
 
-/* global uDom */
-
-'use strict';
+import { dom, qs$, qsa$ } from './dom.js';
 
 /******************************************************************************/
 
-(function() {
+(( ) => {
 
 /******************************************************************************/
 
-var showdomButton = uDom.nodeFromId('showdom');
+const logger = self.logger;
+const showdomButton = qs$('#showdom');
+const inspector = qs$('#domInspector');
+const domTree = qs$('#domTree');
+const filterToIdMap = new Map();
 
-// Don't bother if the browser is not modern enough.
-if ( typeof Map === 'undefined' || Map.polyfill || typeof WeakMap === 'undefined' ) {
-    showdomButton.classList.add('disabled');
-    return;
-}
+let inspectedTabId = 0;
+let inspectedHostname = '';
+let uidGenerator = 1;
+
+/*******************************************************************************
+ * 
+ * How it works:
+ * 
+ * 1. The logger/inspector is enabled from the logger window
+ * 
+ * 2. The inspector content script is injected in the root frame of the tab
+ * currently selected in the logger
+ * 
+ * 3. The inspector content script asks the logger/inspector to establish
+ * a two-way communication channel
+ * 
+ * 3. The inspector content script embed an inspector frame in the document
+ * being inspected and waits for the inspector frame to be fully loaded
+ * 
+ * 4. The inspector content script sends a messaging port object to the
+ * embedded inspector frame for a two-way communication channel between
+ * the inspector frame and the inspector content script
+ * 
+ * 5. The inspector content script sends dom information to the
+ * logger/inspector
+ * 
+ * */
+
+const contentInspectorChannel = (( ) => {
+    let bcChannel;
+    let toContentPort;
+
+    const start = ( ) => {
+        bcChannel = new globalThis.BroadcastChannel('contentInspectorChannel');
+        bcChannel.onmessage = ev => {
+            const msg = ev.data || {};
+            connect(msg.tabId, msg.frameId);
+        };
+        browser.webNavigation.onDOMContentLoaded.addListener(onContentLoaded);
+    };
+
+    const shutdown = ( ) => {
+        browser.webNavigation.onDOMContentLoaded.removeListener(onContentLoaded);
+        disconnect();
+        bcChannel.close();
+        bcChannel.onmessage = null;
+        bcChannel = undefined;
+    };
+
+    const connect = (tabId, frameId) => {
+        disconnect();
+        try {
+            toContentPort = browser.tabs.connect(tabId, { frameId });
+            toContentPort.onMessage.addListener(onContentMessage);
+            toContentPort.onDisconnect.addListener(onContentDisconnect);
+        } catch {
+        }
+    };
+
+    const disconnect = ( ) => {
+        if ( toContentPort === undefined ) { return; }
+        toContentPort.onMessage.removeListener(onContentMessage);
+        toContentPort.onDisconnect.removeListener(onContentDisconnect);
+        toContentPort.disconnect();
+        toContentPort = undefined;
+    };
+
+    const send = msg => {
+        if ( toContentPort === undefined ) { return; }
+        toContentPort.postMessage(msg);
+    };
+
+    const onContentMessage = msg => {
+        if ( msg.what === 'domLayoutFull' ) {
+            inspectedHostname = msg.hostname;
+            renderDOMFull(msg);
+        } else if ( msg.what === 'domLayoutIncremental' ) {
+            renderDOMIncremental(msg);
+        }
+    };
+
+    const onContentDisconnect = ( ) => {
+        disconnect();
+    };
+
+    const onContentLoaded = details => {
+        if ( details.tabId !== inspectedTabId ) { return; }
+        if ( details.frameId !== 0 ) { return; }
+        disconnect();
+        injectInspector();
+    };
+
+    return { start, disconnect, send, shutdown };
+})();
 
 /******************************************************************************/
 
-var logger = self.logger;
-var messaging = vAPI.messaging;
-
-var inspectedTabId = '';
-var inspectedURL = '';
-var inspectedHostname = '';
-var pollTimer = null;
-var fingerprint = null;
-var inspector = uDom.nodeFromId('domInspector');
-var domTree = uDom.nodeFromId('domTree');
-var tabSelector = uDom.nodeFromId('pageSelector');
-var uidGenerator = 1;
-var filterToIdMap = new Map();
-
-/******************************************************************************/
-
-var nodeFromDomEntry = function(entry) {
-    var node, value;
-    var li = document.createElement('li');
-    li.setAttribute('id', entry.nid);
+const nodeFromDomEntry = entry => {
+    const li = document.createElement('li');
+    dom.attr(li, 'id', entry.nid);
     // expander/collapser
-    node = document.createElement('span');
-    li.appendChild(node);
+    li.appendChild(document.createElement('span'));
     // selector
-    node = document.createElement('code');
+    let node = document.createElement('code');
     node.textContent = entry.sel;
     li.appendChild(node);
     // descendant count
-    value = entry.cnt || 0;
+    let value = entry.cnt || 0;
     node = document.createElement('span');
     node.textContent = value !== 0 ? value.toLocaleString() : '';
-    node.setAttribute('data-cnt', value);
+    dom.attr(node, 'data-cnt', value);
     li.appendChild(node);
     // cosmetic filter
     if ( entry.filter === undefined ) {
         return li;
     }
     node = document.createElement('code');
-    node.classList.add('filter');
+    dom.cl.add(node, 'filter');
     value = filterToIdMap.get(entry.filter);
     if ( value === undefined ) {
-        value = uidGenerator.toString();
+        value = `${uidGenerator}`;
         filterToIdMap.set(entry.filter, value);
         uidGenerator += 1;
     }
-    node.setAttribute('data-filter-id', value);
+    dom.attr(node, 'data-filter-id', value);
     node.textContent = entry.filter;
     li.appendChild(node);
-    li.classList.add('isCosmeticHide');
+    dom.cl.add(li, 'isCosmeticHide');
     return li;
 };
 
 /******************************************************************************/
 
-var appendListItem = function(ul, li) {
+const appendListItem = (ul, li) => {
     ul.appendChild(li);
     // Ancestor nodes of a node which is affected by a cosmetic filter will
     // be marked as "containing cosmetic filters", for user convenience.
-    if ( li.classList.contains('isCosmeticHide') === false ) {
-        return;
-    }
+    if ( dom.cl.has(li, 'isCosmeticHide') === false ) { return; }
     for (;;) {
         li = li.parentElement.parentElement;
-        if ( li === null ) {
-            break;
-        }
-        li.classList.add('hasCosmeticHide');
+        if ( li === null ) { break; }
+        dom.cl.add(li, 'hasCosmeticHide');
     }
 };
 
 /******************************************************************************/
 
-var renderDOMFull = function(response) {
-    var domTreeParent = domTree.parentElement;
-    var ul = domTreeParent.removeChild(domTree);
+const renderDOMFull = response => {
+    const domTreeParent = domTree.parentElement;
+    let ul = domTreeParent.removeChild(domTree);
     logger.removeAllChildren(domTree);
 
     filterToIdMap.clear();
 
-    var lvl = 0;
-    var entries = response.layout;
-    var n = entries.length;
-    var li, entry;
-    for ( var i = 0; i < n; i++ ) {
-        entry = entries[i];
+    let lvl = 0;
+    let li;
+    for ( const entry of response.layout ) {
         if ( entry.lvl === lvl ) {
             li = nodeFromDomEntry(entry);
             appendListItem(ul, li);
@@ -132,7 +198,7 @@ var renderDOMFull = function(response) {
         if ( entry.lvl > lvl ) {
             ul = document.createElement('ul');
             li.appendChild(ul);
-            li.classList.add('branch');
+            dom.cl.add(li, 'branch');
             li = nodeFromDomEntry(entry);
             appendListItem(ul, li);
             lvl = entry.lvl;
@@ -151,55 +217,49 @@ var renderDOMFull = function(response) {
     while ( ul.parentNode !== null ) {
         ul = ul.parentNode;
     }
-    ul.firstElementChild.classList.add('show');
+    dom.cl.add(ul.firstElementChild, 'show');
 
     domTreeParent.appendChild(domTree);
 };
 
-// https://www.youtube.com/watch?v=IDGNA83mxDo
-
 /******************************************************************************/
 
-var patchIncremental = function(from, delta) {
-    var span, cnt;
-    var li = from.parentElement.parentElement;
-    var patchCosmeticHide = delta >= 0 &&
-                            from.classList.contains('isCosmeticHide') &&
-                            li.classList.contains('hasCosmeticHide') === false;
+const patchIncremental = (from, delta) => {
+    let li = from.parentElement.parentElement;
+    const patchCosmeticHide = delta >= 0 &&
+        dom.cl.has(from, 'isCosmeticHide') &&
+        dom.cl.has(li, 'hasCosmeticHide') === false;
     // Include descendants count when removing a node
     if ( delta < 0 ) {
         delta -= countFromNode(from);
     }
     for ( ; li.localName === 'li'; li = li.parentElement.parentElement ) {
-        span = li.children[2];
+        const span = li.children[2];
         if ( delta !== 0 ) {
-            cnt = countFromNode(li) + delta;
+            const cnt = countFromNode(li) + delta;
             span.textContent = cnt !== 0 ? cnt.toLocaleString() : '';
-            span.setAttribute('data-cnt', cnt);
+            dom.attr(span, 'data-cnt', cnt);
         }
         if ( patchCosmeticHide ) {
-            li.classList.add('hasCosmeticHide');
+            dom.cl.add(li, 'hasCosmeticHide');
         }
     }
 };
 
 /******************************************************************************/
 
-var renderDOMIncremental = function(response) {
+const renderDOMIncremental = response => {
     // Process each journal entry:
     //  1 = node added
     // -1 = node removed
-    var journal = response.journal;
-    var nodes = response.nodes;
-    var entry, previous, li, ul;
-    for ( var i = 0, n = journal.length; i < n; i++ ) {
-        entry = journal[i];
+    const nodes = new Map(response.nodes);
+    let li = null;
+    let ul = null;
+    for ( const entry of response.journal ) {
         // Remove node
         if ( entry.what === -1 ) {
-            li = document.getElementById(entry.nid);
-            if ( li === null ) {
-                continue;
-            }
+            li = qs$(`#${entry.nid}`);
+            if ( li === null ) { continue; }
             patchIncremental(li, -1);
             li.parentNode.removeChild(li);
             continue;
@@ -211,33 +271,33 @@ var renderDOMIncremental = function(response) {
         }
         // Add node as sibling
         if ( entry.what === 1 && entry.l ) {
-            previous = document.getElementById(entry.l);
+            const previous = qs$(`#${entry.l}`);
             // This should not happen
             if ( previous === null ) {
                 // throw new Error('No left sibling!?');
                 continue;
             }
             ul = previous.parentElement;
-            li = nodeFromDomEntry(nodes[entry.nid]);
+            li = nodeFromDomEntry(nodes.get(entry.nid));
             ul.insertBefore(li, previous.nextElementSibling);
             patchIncremental(li, 1);
             continue;
         }
         // Add node as child
         if ( entry.what === 1 && entry.u ) {
-            li = document.getElementById(entry.u);
+            li = qs$(`#${entry.u}`);
             // This should not happen
             if ( li === null ) {
                 // throw new Error('No parent!?');
                 continue;
             }
-            ul = li.querySelector('ul');
+            ul = qs$(li, 'ul');
             if ( ul === null ) {
                 ul = document.createElement('ul');
                 li.appendChild(ul);
-                li.classList.add('branch');
+                dom.cl.add(li, 'branch');
             }
-            li = nodeFromDomEntry(nodes[entry.nid]);
+            li = nodeFromDomEntry(nodes.get(entry.nid));
             ul.appendChild(li);
             patchIncremental(li, 1);
             continue;
@@ -245,29 +305,24 @@ var renderDOMIncremental = function(response) {
     }
 };
 
-// https://www.youtube.com/watch?v=6u2KPtJB9h8
-
 /******************************************************************************/
 
-var countFromNode = function(li) {
-    var span = li.children[2];
-    var cnt = parseInt(span.getAttribute('data-cnt'), 10);
+const countFromNode = li => {
+    const span = li.children[2];
+    const cnt = parseInt(dom.attr(span, 'data-cnt'), 10);
     return isNaN(cnt) ? 0 : cnt;
 };
 
 /******************************************************************************/
 
-var selectorFromNode = function(node) {
-    var selector = '';
-    var code;
+const selectorFromNode = node => {
+    let selector = '';
     while ( node !== null ) {
         if ( node.localName === 'li' ) {
-            code = node.querySelector('code');
+            const code = qs$(node, 'code');
             if ( code !== null ) {
-                selector = code.textContent + ' > ' + selector;
-                if ( selector.indexOf('#') !== -1 ) {
-                    break;
-                }
+                selector = `${code.textContent} > ${selector}`;
+                if ( selector.includes('#') ) { break; }
             }
         }
         node = node.parentElement;
@@ -277,10 +332,10 @@ var selectorFromNode = function(node) {
 
 /******************************************************************************/
 
-var selectorFromFilter = function(node) {
+const selectorFromFilter = node => {
     while ( node !== null ) {
         if ( node.localName === 'li' ) {
-            var code = node.querySelector('code:nth-of-type(2)');
+            const code = qs$(node, 'code:nth-of-type(2)');
             if ( code !== null ) {
                 return code.textContent;
             }
@@ -292,8 +347,8 @@ var selectorFromFilter = function(node) {
 
 /******************************************************************************/
 
-var nidFromNode = function(node) {
-    var li = node;
+const nidFromNode = node => {
+    let li = node;
     while ( li !== null ) {
         if ( li.localName === 'li' ) {
             return li.id || '';
@@ -305,156 +360,112 @@ var nidFromNode = function(node) {
 
 /******************************************************************************/
 
-var startDialog = (function() {
-    var dialog = uDom.nodeFromId('cosmeticFilteringDialog');
-    var textarea = dialog.querySelector('textarea');
-    var hideSelectors = [];
-    var unhideSelectors = [];
-    var inputTimer = null;
+const startDialog = (( ) => {
+    let dialog;
+    let textarea;
+    let hideSelectors = [];
+    let unhideSelectors = [];
 
-    var onInputChanged = (function() {
-        var parse = function() {
-            inputTimer = null;
-            hideSelectors = [];
-            unhideSelectors = [];
+    const parse = function() {
+        hideSelectors = [];
+        unhideSelectors = [];
 
-            var line, matches;
-            var re = /^([^#]*)(#@?#)(.+)$/;
-            var lines = textarea.value.split(/\s*\n\s*/);
-            for ( var i = 0; i < lines.length; i++ ) {
-                line = lines[i].trim();
-                if ( line === '' || line.charAt(0) === '!' ) {
-                    continue;
-                }
-                matches = re.exec(line);
-                if ( matches === null || matches.length !== 4 ) {
-                    continue;
-                }
-                if ( inspectedHostname.lastIndexOf(matches[1]) === -1 ) {
-                    continue;
-                }
-                if ( matches[2] === '##' ) {
-                    hideSelectors.push(matches[3]);
-                } else {
-                    unhideSelectors.push(matches[3]);
-                }
+        const re = /^([^#]*)(#@?#)(.+)$/;
+        for ( let line of textarea.value.split(/\s*\n\s*/) ) {
+            line = line.trim();
+            if ( line === '' || line.charAt(0) === '!' ) { continue; }
+            const matches = re.exec(line);
+            if ( matches === null || matches.length !== 4 ) { continue; }
+            if ( inspectedHostname.lastIndexOf(matches[1]) === -1 ) {
+                continue;
             }
-
-            showCommitted();
-        };
-
-        return function parseAsync() {
-            if ( inputTimer === null ) {
-                inputTimer = vAPI.setTimeout(parse, 743);
+            if ( matches[2] === '##' ) {
+                hideSelectors.push(matches[3]);
+            } else {
+                unhideSelectors.push(matches[3]);
             }
-        };
-    })();
-
-    var onClick = function(ev) {
-        var target = ev.target;
-
-        // click outside the dialog proper
-        if ( target.classList.contains('modalDialog') ) {
-            return stop();
         }
+
+        showCommitted();
+    };
+
+    const inputTimer = vAPI.defer.create(parse);
+
+    const onInputChanged = ( ) => {
+        inputTimer.on(743);
+    };
+
+    const onClicked = function(ev) {
+        const target = ev.target;
+
         ev.stopPropagation();
 
         if ( target.id === 'createCosmeticFilters' ) {
-            messaging.send('loggerUI', { what: 'createUserFilter', filters: textarea.value });
+            vAPI.messaging.send('loggerUI', {
+                what: 'createUserFilter',
+                filters: textarea.value,
+            });
             // Force a reload for the new cosmetic filter(s) to take effect
-            messaging.send('loggerUI', { what: 'reloadTab', tabId: inspectedTabId });
+            vAPI.messaging.send('loggerUI', {
+                what: 'reloadTab',
+                tabId: inspectedTabId,
+            });
             return stop();
         }
     };
 
-    var onCooked = function(entries) {
-        if ( Array.isArray(entries) === false ) {
-            return;
+    const showCommitted = function() {
+        contentInspectorChannel.send({
+            what: 'showCommitted',
+            hide: hideSelectors.join(',\n'),
+            unhide: unhideSelectors.join(',\n')
+        });
+    };
+
+    const showInteractive = function() {
+        contentInspectorChannel.send({
+            what: 'showInteractive',
+            hide: hideSelectors.join(',\n'),
+            unhide: unhideSelectors.join(',\n')
+        });
+    };
+
+    const start = function() {
+        dialog = logger.modalDialog.create('#cosmeticFilteringDialog', stop);
+        textarea = qs$(dialog, 'textarea');
+        hideSelectors = [];
+        for ( const node of qsa$(domTree, 'code.off') ) {
+            if ( dom.cl.has(node, 'filter') ) { continue; }
+            hideSelectors.push(selectorFromNode(node));
         }
-        hideSelectors = entries;
-        var taValue = [], i, node;
-        var d = new Date();
-        taValue.push('! ' + d.toLocaleString() + ' ' + inspectedURL);
-        for ( i = 0; i < entries.length; i++ ) {
-            taValue.push(inspectedHostname + '##' + entries[i]);
+        const taValue = [];
+        for ( const selector of hideSelectors ) {
+            taValue.push(inspectedHostname + '##' + selector);
         }
-        var ids = new Set(), id;
-        var nodes = domTree.querySelectorAll('code.filter.off');
-        for ( i = 0; i < nodes.length; i++ ) {
-            node = nodes[i];
-            id = node.getAttribute('data-filter-id');
-            if ( ids.has(id) ) {
-                continue;
-            }
+        const ids = new Set();
+        for ( const node of qsa$(domTree, 'code.filter.off') ) {
+            const id = dom.attr(node, 'data-filter-id');
+            if ( ids.has(id) ) { continue; }
             ids.add(id);
             unhideSelectors.push(node.textContent);
             taValue.push(inspectedHostname + '#@#' + node.textContent);
         }
         textarea.value = taValue.join('\n');
-        document.body.appendChild(dialog);
-        dialog.addEventListener('click', onClick, true);
-        showCommitted();
-    };
-
-    var showCommitted = function() {
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'showCommitted',
-                hide: hideSelectors.join(',\n'),
-                unhide: unhideSelectors.join(',\n')
-            },
-            inspectedTabId,
-            'domInspector'
-        );
-    };
-
-    var showInteractive = function() {
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'showInteractive',
-                hide: hideSelectors.join(',\n'),
-                unhide: unhideSelectors.join(',\n')
-            },
-            inspectedTabId,
-            'domInspector'
-        );
-    };
-
-    var start = function() {
         textarea.addEventListener('input', onInputChanged);
-        var node, entries = [];
-        var nodes = domTree.querySelectorAll('code.off');
-        for ( var i = 0; i < nodes.length; i++ ) {
-            node = nodes[i];
-            if ( node.classList.contains('filter') === false ) {
-                entries.push({
-                    nid: nidFromNode(node),
-                    selector: selectorFromNode(node)
-                });
-            }
-        }
-        messaging.sendTo(
-            'loggerUI',
-            { what: 'cookFilters', entries: entries },
-            inspectedTabId,
-            'domInspector',
-            onCooked
-        );
+        dialog.addEventListener('click', onClicked, true);
+        showCommitted();
+        logger.modalDialog.show();
     };
 
-    var stop = function() {
-        if ( inputTimer !== null ) {
-            clearTimeout(inputTimer);
-            inputTimer = null;
-        }
+    const stop = function() {
+        inputTimer.off();
         showInteractive();
+        textarea.removeEventListener('input', onInputChanged);
+        dialog.removeEventListener('click', onClicked, true);
+        dialog = undefined;
+        textarea = undefined;
         hideSelectors = [];
         unhideSelectors = [];
-        textarea.removeEventListener('input', onInputChanged);
-        dialog.removeEventListener('click', onClick, true);
-        document.body.removeChild(dialog);
     };
 
     return start;
@@ -462,321 +473,231 @@ var startDialog = (function() {
 
 /******************************************************************************/
 
-var onClick = function(ev) {
+const onClicked = ev => {
     ev.stopPropagation();
 
-    if ( inspectedTabId === '' ) {
-        return;
-    }
+    if ( inspectedTabId === 0 ) { return; }
 
-    var target = ev.target;
-    var parent = target.parentElement;
+    const target = ev.target;
+    const parent = target.parentElement;
 
     // Expand/collapse branch
     if (
         target.localName === 'span' &&
         parent instanceof HTMLLIElement &&
-        parent.classList.contains('branch') &&
+        dom.cl.has(parent, 'branch') &&
         target === parent.firstElementChild
     ) {
-        target.parentElement.classList.toggle('show');
+        const state = dom.cl.toggle(parent, 'show');
+        if ( !state ) {
+            for ( const node of qsa$(parent, '.branch') ) {
+                dom.cl.remove(node, 'show');
+            }
+        }
         return;
     }
 
     // Not a node or filter 
-    if ( target.localName !== 'code' ) {
-        return;
-    }
+    if ( target.localName !== 'code' ) { return; }
 
     // Toggle cosmetic filter
-    if ( target.classList.contains('filter') ) {
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'toggleFilter',
-                original: false,
-                target: target.classList.toggle('off'),
-                selector: selectorFromNode(target),
-                filter: selectorFromFilter(target),
-                nid: ''
-            },
-            inspectedTabId,
-            'domInspector'
-        );
-        uDom('[data-filter-id="' + target.getAttribute('data-filter-id') + '"]', inspector).toggleClass(
+    if ( dom.cl.has(target, 'filter') ) {
+        contentInspectorChannel.send({
+            what: 'toggleFilter',
+            original: false,
+            target: dom.cl.toggle(target, 'off'),
+            selector: selectorFromNode(target),
+            filter: selectorFromFilter(target),
+            nid: nidFromNode(target)
+        });
+        dom.cl.toggle(
+            qsa$(inspector, `[data-filter-id="${dom.attr(target, 'data-filter-id')}"]`),
             'off',
-            target.classList.contains('off')
+            dom.cl.has(target, 'off')
         );
     }
     // Toggle node
     else {
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'toggleNodes',
-                original: true,
-                target: target.classList.toggle('off') === false,
-                selector: selectorFromNode(target),
-                nid: nidFromNode(target)
-            },
-            inspectedTabId,
-            'domInspector'
-        );
+        contentInspectorChannel.send({
+            what: 'toggleNodes',
+            original: true,
+            target: dom.cl.toggle(target, 'off') === false,
+            selector: selectorFromNode(target),
+            nid: nidFromNode(target)
+        });
     }
 
-    var cantCreate = domTree.querySelector('.off') === null;
-    inspector.querySelector('.permatoolbar .revert').classList.toggle('disabled', cantCreate);
-    inspector.querySelector('.permatoolbar .commit').classList.toggle('disabled', cantCreate);
+    const cantCreate = qs$(domTree, '.off') === null;
+    dom.cl.toggle(qs$(inspector, '.permatoolbar .revert'), 'disabled', cantCreate);
+    dom.cl.toggle(qs$(inspector, '.permatoolbar .commit'), 'disabled', cantCreate);
 };
 
 /******************************************************************************/
 
-var onMouseOver = (function() {
-    var mouseoverTarget = null;
-    var mouseoverTimer = null;
+const onMouseOver = (( ) => {
+    let mouseoverTarget = null;
 
-    var timerHandler = function() {
-        mouseoverTimer = null;
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'highlightOne',
-                selector: selectorFromNode(mouseoverTarget),
-                nid: nidFromNode(mouseoverTarget),
-                scrollTo: true
-            },
-            inspectedTabId,
-            'domInspector'
-        );
-    };
+    const mouseoverTimer = vAPI.defer.create(( ) => {
+        contentInspectorChannel.send({
+            what: 'highlightOne',
+            selector: selectorFromNode(mouseoverTarget),
+            nid: nidFromNode(mouseoverTarget),
+            scrollTo: true
+        });
+    });
 
-    return function(ev) {
-        if ( inspectedTabId === '' ) {
-            return;
-        }
+    return ev => {
+        if ( inspectedTabId === 0 ) { return; }
         // Convenience: skip real-time highlighting if shift key is pressed.
-        if ( ev.shiftKey ) {
-            return;
-        }
+        if ( ev.shiftKey ) { return; }
         // Find closest `li`
-        var target = ev.target;
-        while ( target !== null ) {
-            if ( target.localName === 'li' ) {
-                break;
-            }
-            target = target.parentElement;
-        }
-        if ( target === mouseoverTarget ) {
-            return;
-        }
+        const target = ev.target.closest('li');
+        if ( target === mouseoverTarget ) { return; }
         mouseoverTarget = target;
-        if ( mouseoverTimer === null ) {
-            mouseoverTimer = vAPI.setTimeout(timerHandler, 50);
-        }
+        mouseoverTimer.on(50);
     };
 })();
 
 /******************************************************************************/
 
-var currentTabId = function() {
-    if ( showdomButton.classList.contains('active') === false ) {
-        return '';
-    }
-    var tabId = logger.tabIdFromClassName(tabSelector.value) || '';
-    return tabId !== 'bts' ? tabId : '';
+const currentTabId = ( ) => {
+    if ( dom.cl.has(showdomButton, 'active') === false ) { return 0; }
+    return logger.tabIdFromPageSelector();
 };
 
 /******************************************************************************/
 
-var fetchDOMAsync = (function() {
-    var onFetched = function(response) {
-        if ( !response || currentTabId() !== inspectedTabId ) {
-            shutdownInspector();
-            injectInspectorAsync(250);
-            return;
-        }
-
-        switch ( response.status ) {
-        case 'full':
-            renderDOMFull(response);
-            fingerprint = response.fingerprint;
-            inspectedURL = response.url;
-            inspectedHostname = response.hostname;
-            break;
-
-        case 'incremental':
-            renderDOMIncremental(response);
-            break;
-
-        case 'nochange':
-        case 'busy':
-            break;
-
-        default:
-            break;
-        }
-
-        fetchDOMAsync();
-    };
-
-    var onTimeout = function() {
-        pollTimer = null;
-        messaging.sendTo(
-            'loggerUI',
-            {
-                what: 'domLayout',
-                fingerprint: fingerprint
-            },
-            inspectedTabId,
-            'domInspector',
-            onFetched
-        );
-    };
-
-    // Poll for DOM layout data every ~2 seconds at most
-    return function(delay) {
-        if ( pollTimer === null ) {
-            pollTimer = vAPI.setTimeout(onTimeout, delay || 2003);
-        }
-    };
-})();
-
-/******************************************************************************/
-
-var injectInspector = function() {
-    var tabId = currentTabId();
-    // No valid tab, go back
-    if ( tabId === '' ) {
-        injectInspectorAsync();
-        return;
-    }
-    inspectedTabId = tabId;
-    fingerprint = null;
-    messaging.send(
-        'loggerUI',
-        {
+const injectInspector = (( ) => {
+    const timer = vAPI.defer.create(( ) => {
+        const tabId = currentTabId();
+        if ( tabId <= 0 ) { return; }
+        inspectedTabId = tabId;
+        vAPI.messaging.send('loggerUI', {
             what: 'scriptlet',
-            tabId: tabId,
-            scriptlet: 'dom-inspector'
-        }
-    );
-    fetchDOMAsync(250);
-};
-
-/******************************************************************************/
-
-var injectInspectorAsync = function(delay) {
-    if ( pollTimer !== null ) {
-        return;
-    }
-    if ( showdomButton.classList.contains('active') === false ) {
-        return;
-    }
-    pollTimer = vAPI.setTimeout(function() {
-        pollTimer = null;
-        injectInspector();
-    }, delay || 1001);
-};
-
-/******************************************************************************/
-
-var shutdownInspector = function() {
-    if ( inspectedTabId !== '' ) {
-        messaging.sendTo(
-            'loggerUI',
-            { what: 'shutdown' },
-            inspectedTabId,
-            'domInspector'
-        );
-    }
-    logger.removeAllChildren(domTree);
-    if ( pollTimer !== null ) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-    }
-    inspectedTabId = '';
-};
-
-/******************************************************************************/
-
-var onTabIdChanged = function() {
-    if ( inspectedTabId !== currentTabId() ) {
+            tabId,
+            scriptlet: 'dom-inspector',
+        });
+    });
+    return ( ) => {
         shutdownInspector();
-        injectInspectorAsync(250);
+        timer.offon(353);
+    };
+})();
+
+/******************************************************************************/
+
+const shutdownInspector = ( ) => {
+    contentInspectorChannel.disconnect();
+    logger.removeAllChildren(domTree);
+    dom.cl.remove(inspector, 'vExpanded');
+    inspectedTabId = 0;
+};
+
+/******************************************************************************/
+
+const onTabIdChanged = ( ) => {
+    const tabId = currentTabId();
+    if ( tabId <= 0 ) {
+        return toggleOff();
+    }
+    if ( inspectedTabId !== tabId ) {
+        injectInspector();
     }
 };
 
 /******************************************************************************/
 
-var toggleHighlightMode = function() {
-    messaging.sendTo(
-        'loggerUI',
-        {
-            what: 'highlightMode',
-            invert: uDom.nodeFromSelector('#domInspector .permatoolbar .highlightMode').classList.toggle('invert')
-        },
-        inspectedTabId,
-        'domInspector'
-    );
+const toggleVExpandView = ( ) => {
+    const branches = qsa$('#domTree li.branch.show > ul > li.branch:not(.show)');
+    for ( const branch of branches ) {
+        dom.cl.add(branch, 'show');
+    }
+};
+
+const toggleVCompactView = ( ) => {
+    const branches = qsa$('#domTree li.branch.show > ul > li:not(.show)');
+    const tohideSet = new Set();
+    for ( const branch of branches ) {
+        const node = branch.closest('li.branch.show');
+        if ( node.id === 'n1' ) { continue; }
+        tohideSet.add(node);
+    }
+    const tohideList = Array.from(tohideSet);
+    let i = tohideList.length - 1;
+    while ( i > 0 ) {
+        if ( tohideList[i-1].contains(tohideList[i]) ) {
+            tohideList.splice(i-1, 1);
+        } else if ( tohideList[i].contains(tohideList[i-1]) ) {
+            tohideList.splice(i, 1);
+        }
+        i -= 1;
+    }
+    for ( const node of tohideList ) {
+        dom.cl.remove(node, 'show');
+    }
+};
+
+const toggleHCompactView = ( ) => {
+    dom.cl.toggle(inspector, 'hCompact');
 };
 
 /******************************************************************************/
 
-var revert = function() {
-    uDom('#domTree .off').removeClass('off');
-    messaging.sendTo(
-        'loggerUI',
-        { what: 'resetToggledNodes' },
-        inspectedTabId,
-        'domInspector'
-    );
-    inspector.querySelector('.permatoolbar .revert').classList.add('disabled');
-    inspector.querySelector('.permatoolbar .commit').classList.add('disabled');
+const revert = ( ) => {
+    dom.cl.remove('#domTree .off', 'off');
+    contentInspectorChannel.send({ what: 'resetToggledNodes' });
+    dom.cl.add(qs$(inspector, '.permatoolbar .revert'), 'disabled');
+    dom.cl.add(qs$(inspector, '.permatoolbar .commit'), 'disabled');
 };
 
 /******************************************************************************/
 
-var toggleOn = function() {
+const toggleOn = ( ) => {
+    dom.cl.add('#inspectors', 'dom');
     window.addEventListener('beforeunload', toggleOff);
-    tabSelector.addEventListener('change', onTabIdChanged);
-    domTree.addEventListener('click', onClick, true);
-    domTree.addEventListener('mouseover', onMouseOver, true);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .highlightMode').addEventListener('click', toggleHighlightMode);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .revert').addEventListener('click', revert);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .commit').addEventListener('click', startDialog);
+    dom.on(document, 'tabIdChanged', onTabIdChanged);
+    dom.on(domTree, 'click', onClicked, true);
+    dom.on(domTree, 'mouseover', onMouseOver, true);
+    dom.on('#domInspector .vExpandToggler', 'click', toggleVExpandView);
+    dom.on('#domInspector .vCompactToggler', 'click', toggleVCompactView);
+    dom.on('#domInspector .hCompactToggler', 'click', toggleHCompactView);
+    dom.on('#domInspector .permatoolbar .revert', 'click', revert);
+    dom.on('#domInspector .permatoolbar .commit', 'click', startDialog);
+    contentInspectorChannel.start();
     injectInspector();
 };
 
 /******************************************************************************/
 
-var toggleOff = function() {
+const toggleOff = ( ) => {
+    dom.cl.remove(showdomButton, 'active');
+    dom.cl.remove('#inspectors', 'dom');
     shutdownInspector();
     window.removeEventListener('beforeunload', toggleOff);
-    tabSelector.removeEventListener('change', onTabIdChanged);
-    domTree.removeEventListener('click', onClick, true);
-    domTree.removeEventListener('mouseover', onMouseOver, true);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .highlightMode').removeEventListener('click', toggleHighlightMode);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .revert').removeEventListener('click', revert);
-    uDom.nodeFromSelector('#domInspector .permatoolbar .commit').removeEventListener('click', startDialog);
-    inspectedTabId = '';
+    dom.off(document, 'tabIdChanged', onTabIdChanged);
+    dom.off(domTree, 'click', onClicked, true);
+    dom.off(domTree, 'mouseover', onMouseOver, true);
+    dom.off('#domInspector .vExpandToggler', 'click', toggleVExpandView);
+    dom.off('#domInspector .vCompactToggler', 'click', toggleVCompactView);
+    dom.off('#domInspector .hCompactToggler', 'click', toggleHCompactView);
+    dom.off('#domInspector .permatoolbar .revert', 'click', revert);
+    dom.off('#domInspector .permatoolbar .commit', 'click', startDialog);
+    contentInspectorChannel.shutdown();
+    inspectedTabId = 0;
 };
 
 /******************************************************************************/
 
-var toggle = function() {
-    if ( showdomButton.classList.toggle('active') ) {
+const toggle = ( ) => {
+    if ( dom.cl.toggle(showdomButton, 'active') ) {
         toggleOn();
     } else {
         toggleOff();
     }
 };
 
-/******************************************************************************/
-
-showdomButton.addEventListener('click', toggle);
+dom.on(showdomButton, 'click', toggle);
 
 /******************************************************************************/
 
 })();
-
-

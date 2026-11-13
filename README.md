@@ -1,168 +1,189 @@
-[![Build](https://travis-ci.org/gorhill/uBlock.svg?branch=master)](https://travis-ci.org/gorhill/uBlock)
-[![Crowdin](https://d322cqt584bo4o.cloudfront.net/ublock/localized.png)](https://crowdin.com/project/ublock)
-[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/gorhill/uBlock/blob/master/LICENSE.txt)
+[![Badge Commits]][Commit Rate]
+[![Badge Issues]][Issues]
+[![Badge Localization]][Crowdin]
+[![Badge License]][License]
+[![Badge NPM]][NPM]
+[![Badge Mozilla]][Mozilla]
+![Badge Chrome]
+[![Badge Edge]][Edge]
 
 ***
-
-##### BEWARE! uBlock Origin is COMPLETELY UNRELATED to the web site ublock.org**
-
-The donations sought by the [individual](https://github.com/chrisaljoudi/) behind `ublock.org` (_"to keeps uBlock development possible"_, [a misrepresentation](https://en.wikipedia.org/wiki/UBlock_Origin#uBlock_.28ublock.org.29)) are _not_ benefiting any of those who contributed most to create uBlock Origin ([developers](https://github.com/gorhill/uBlock/graphs/contributors), [translators](https://crowdin.com/project/ublock), and all those who put efforts in opening detailed issues). For the differences between uBlock Origin and uBlock, see the unbiased [Wikipedia article](https://en.wikipedia.org/wiki/UBlock_Origin).
-
-***
-
-uBlock Origin is **NOT** an "ad blocker": [it is a wide-spectrum blocker](https://github.com/gorhill/uBlock/wiki/Blocking-mode) -- which happens to be able to function as a mere "ad blocker". The default behavior of uBlock Origin when newly installed is to block ads, trackers and malware sites -- through [_EasyList_](https://easylist.github.io/#easylist), [_EasyPrivacy_](https://easylist.github.io/#easyprivacy), [_Peter Lowe’s ad/tracking/malware servers_](https://pgl.yoyo.org/adservers/policy.php), various lists of [malware](http://www.malwaredomainlist.com/) [sites](http://www.malwaredomains.com/), and uBlock Origin's [own filter lists](https://github.com/uBlockOrigin/uAssets/tree/master/filters).
-
-*** 
 
 <h1 align="center">
 <sub>
-<img  src="https://raw.githubusercontent.com/gorhill/uBlock/master/doc/img/icon38@2x.png"
-      height="38"
-      width="38">
+<img src="https://github.com/gorhill/uBlock/blob/master/src/img/ublock.svg" height="38" width="38">
 </sub>
-uBlock Origin
+uBlock Origin (uBO)
 </h1>
-<p align="center">
-<sup> <!-- Pronounciation -->
-      pronounced <i>you-block origin</i> (<code>/ˈjuːˌblɒk/</code>) — <i>you</i> decide what enters your browser.
-</sup>
-<br>
-<sup> <!-- Languages -->
-      <img src="https://raw.githubusercontent.com/gorhill/uBlock/master/doc/img/languageicon-36.png" width="18" height="18">
-      <sup>
-            English,
-            <a href="https://github.com/fang5566/uBlock/blob/master/README.md#ublock-origin">Chinese (中文)</a>,
-            <a href="https://github.com/delightbot/uBlock/blob/master/README.md#ublock-origin">Korean (한국어)</a>,
-            <a href="https://github.com/ialexsilva/uBlock/blob/master/README.md#ublock-origin">Português (Brasil)</a>
-      </sup>
-</sup>
-</p>
+
+| Browser   | Install from ... | Status |
+| :-------: | ---------------- | ------ |
+| <img src="https://github.com/user-attachments/assets/b0136512-56a5-4856-8c50-4971c957a24f" alt="Get uBlock Origin for Firefox"> | <a href="https://addons.mozilla.org/addon/ublock-origin/">Firefox Add-ons</a> | [uBO works best on Firefox](https://github.com/gorhill/uBlock/wiki/uBlock-Origin-works-best-on-Firefox) |
+| <img src="https://github.com/user-attachments/assets/3a7569f8-688b-4eb1-a643-8d0fe173aefe" alt="Get uBlock Origin for Microsoft Edge"> | <a href="https://microsoftedge.microsoft.com/addons/detail/ublock-origin/odfafepnkmbhccpbejgmiehpchacaeak">Edge Add-ons</a> | <a href="https://blogs.windows.com/msedgedev/2026/08/07/moving-the-microsoft-edge-extensions-ecosystem-forward-with-manifest-version-3/">"Moving the Microsoft Edge extensions ecosystem forward with Manifest Version 3"</a>: "Beginning in August 2026, Microsoft Edge will start the consumer transition away from Manifest Version 2 (MV2) extensions and toward MV3. Our goal is to complete the consumer transition by the end of 2026, with enterprise deprecation following in early 2027." |
+| <img src="https://github.com/user-attachments/assets/938f080c-fe64-4e48-8b89-4bfceabb56e6" alt="Get uBlock Origin for Opera"> | <a href="https://addons.opera.com/extensions/details/ublock/">Opera Add-ons</a> |
+| <img src="https://github.com/user-attachments/assets/5463ef88-873b-4516-8514-5277664cfde7" alt="Get uBlock Origin for Chromium"> | Removed | <a href="https://developer.chrome.com/docs/extensions/develop/migrate/mv2-deprecation-timeline#aug_31st_2026_all_remaining_manifest_v2_extensions_removed_from_the_chrome_web_store">"Manifest V2 support timeline"</a>: "Aug 31st 2026: All remaining Manifest V2 extensions removed from the Chrome Web Store"<br><a href="https://github.com/uBlockOrigin/uBlock-issues/wiki/About-Google-Chrome's-%22This-extension-may-soon-no-longer-be-supported%22">About Google Chrome's "This extension may soon no longer be supported"</a> |
+| <img src="https://github.com/user-attachments/assets/2e9037c4-836d-44c1-a716-ba96e89daaff" alt="Get uBlock Origin for Thunderbird"> | <a href="https://addons.thunderbird.net/thunderbird/addon/ublock-origin/">Thunderbird Add-ons</a> | [No longer updated and stuck at 1.49.2.](https://github.com/uBlockOrigin/uBlock-issues/issues/2928) Later versions require "GitHub - Releases". |
+| <img src="https://upload.wikimedia.org/wikipedia/commons/c/c2/GitHub_Invertocat_Logo.svg" height="50" alt="Get uBlock Origin through GitHub"> | <a href="https://github.com/gorhill/uBlock/releases">GitHub - Releases</a> | Stable and development versions on Firefox, Chromium MV2, and Thunderbird. Must be placed manually into web browsers; the Chromium and Thunderbird versions usually won't auto-update.
+
+<h3> Related: 
+<sub>
+<img src="https://github.com/gorhill/uBlock/blob/master/platform/mv3/extension/img/ublock.svg" height="24" width="24">
+</sub>
+<a href="https://github.com/uBlockOrigin/uBOL-home">uBlock Origin Lite</a>
+</h3>
 
 
-**An efficient blocker add-on for various browsers. Fast, potent, and lean.**
+***
+
+uBlock Origin (uBO) is a CPU and memory-efficient [wide-spectrum content blocker][Blocking] for Chromium and Firefox. It blocks ads, trackers, coin miners, popups, annoying anti-blockers, malware sites, etc., by default using [EasyList][EasyList], [EasyPrivacy][EasyPrivacy], [Peter Lowe's Blocklist][Peter Lowe's Blocklist], [Online Malicious URL Blocklist][Malicious Blocklist], and uBO [filter lists][uBO Filters]. There are many other lists available to block even more. Hosts files are also supported. uBO uses the EasyList filter syntax and [extends][Extended Syntax] the syntax to work with custom rules and filters.
+
+You may easily unselect any preselected filter lists if you think uBO blocks too much. For reference, Adblock Plus installs with only EasyList, ABP filters, and Acceptable Ads enabled by default.
+
+It is important to note that using a blocker is **NOT** [theft]. Do not fall for this creepy idea. The _ultimate_ logical consequence of `blocking = theft` is the criminalization of the inalienable right to privacy.
+
+Ads, "unintrusive" or not, are just the visible portion of the privacy-invading means entering your browser when you visit most sites. **uBO's primary goal is to help users neutralize these privacy-invading methods** in a way that welcomes those users who do not wish to use more technical means.
+
+***
 
 * [Documentation](#documentation)
-* [Purpose & General Info](#philosophy)
-* [Performance and Efficiency](#performance)
-  * [Memory](#memory)
-  * [CPU](#cpu)
-  * [Blocking](#blocking)
-  * [Quick tests](#quick-tests)
 * [Installation](#installation)
+  * [Firefox](#firefox)
   * [Chromium](#chromium)
-  * [Firefox](#firefox--firefox-for-android)
-  * [Microsoft Edge](#microsoft-edge)
+  * [Thunderbird](#thunderbird)
+  * [All Programs](#all-programs)
+  * [Enterprise Deployment](#enterprise-deployment)
 * [Release History](#release-history)
-* [Privacy policy](https://github.com/gorhill/uBlock/wiki/Privacy-policy)
-* [Wiki](https://github.com/gorhill/uBlock/wiki)
+* [Translations](#translations)
+* [About](#about)
 
 ## Documentation
 
- Basic mode | Advanced-user mode
-:----------:|:------------------:
-[Popup user interface](https://github.com/gorhill/uBlock/wiki/Quick-guide:-popup-user-interface) | [A point-and-click firewall which can be configured on a per-site basis](https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-quick-guide) 
-<a href="https://github.com/gorhill/uBlock/wiki/Quick-guide:-popup-user-interface"><img src="https://raw.githubusercontent.com/gorhill/uBlock/master/doc/img/popup-1.png" /></a><br><sup>.<br>.</sup> | <a href="https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-quick-guide"><img src="https://cloud.githubusercontent.com/assets/585534/9293685/378d18f0-4402-11e5-9255-8ed3fdbfa957.png" /></a><br><sup>Configure as you wish:<br>picture shows 3rd-party scripts and frames blocked by default everywhere</sup>
+<table>
+    <thead>
+        <tr>
+            <th>Basic Mode</th>
+            <th>Advanced Mode</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>The <a href="https://github.com/gorhill/uBlock/wiki/Quick-guide:-popup-user-interface">simple popup user interface</a> for an install-it-and-forget-it type of installation that is configured optimally by default.</td>
+            <td>The <a href="https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-quick-guide">advanced popup user interface</a> includes a point-and-click firewall that is configurable on a per-site basis.</td>
+        </tr>
+        <tr>
+            <td align="center" valign="top"><a href="https://github.com/gorhill/uBlock/wiki/Quick-guide:-popup-user-interface"><img src="https://user-images.githubusercontent.com/585534/232531044-c4ac4dd5-0b60-4c1e-aabb-914be04b846c.png"/></a></td>
+            <td align="center" valign="top"><a href="https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-quick-guide"><img src="https://user-images.githubusercontent.com/585534/232531439-a8f81cc3-6622-45c4-8b32-7348cecf6e98.png"/></a></td>
+        </tr>
+    </tbody>
+</table>
 
-Visit the [uBlock Origin's wiki](https://github.com/gorhill/uBlock/wiki) for documentation.
+Visit the [Wiki][Wiki] for documentation.
 
-## Philosophy
-
-uBlock Origin (or uBlock₀) is not an *ad blocker*; it's a general-purpose blocker. uBlock₀ blocks ads through its support of the [Adblock Plus filter syntax](https://adblockplus.org/en/filters). uBlock₀ [extends](https://github.com/gorhill/uBlock/wiki/Filter-syntax-extensions) the syntax and is designed to work with custom rules and filters. Furthermore, advanced mode allows uBlock₀ to work in [default-deny mode](https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-default-deny), which mode will cause [all 3rd-party network requests](https://requestpolicycontinued.github.io/#what-are-cross-site-requests) to be blocked by default, unless allowed by the user.
-
-That said, it's important to note that using a blocker is **NOT** [theft](https://twitter.com/LeaVerou/status/518154828166725632). Don't fall for this creepy idea. The _ultimate_ logical consequence of `blocking = theft` is the criminalisation of the inalienable right to privacy.
-
-Ads, "unintrusive" or not, are just the visible portions of privacy-invading apparatus entering your browser when you visit most sites nowadays. **uBlock₀'s main goal is to help users neutralize such privacy-invading apparatus** — in a way that welcomes those users who don't wish to use more technical, involved means (such as [µMatrix](https://github.com/gorhill/uMatrix)).
-
-_EasyList_, _Peter Lowe's Adservers_, _EasyPrivacy_ and _Malware domains_ are enabled by default when you install uBlock₀. Many more lists are readily available to block trackers, analytics, and more. Hosts files are also supported.
-
-Once you install uBlock₀, you may easily un-select any of the pre-selected filter lists if you think uBlock₀ blocks too much. For reference, Adblock Plus installs with only _EasyList_ enabled by default.
-
-## Performance
-
-#### Memory
-
-<div align="center">
-On average, uBlock Origin does make your browser run leaner. <sup>[1]</sup><br><br>
-
-Chromium<br>
-<img src="https://cloud.githubusercontent.com/assets/585534/10074141/15f04128-629c-11e5-9155-177fd4909083.png" /><br><br>
-
-Firefox<br>
-<img src="https://cloud.githubusercontent.com/assets/585534/10074130/0577118c-629c-11e5-9902-bf367c6a96c3.png" /><br><br>
-
-</div>
-
-<sup>[1] Details of the benchmark available at <a href="https://github.com/gorhill/uBlock/wiki/Firefox-version:-benchmarking-memory-footprint">Firefox version: benchmarking memory footprint</a>.</sup><br>
-
-#### CPU
-
-<p align="center">
-uBlock Origin is also easy on the CPU<br>
-<img src="https://raw.githubusercontent.com/gorhill/uBlock/master/doc/benchmarks/cpu-usage-overall-chart-20141226.png" /><br>
-<sup>Details of the benchmark available in <a href="https://github.com/gorhill/uBlock/blob/master/doc/benchmarks/cpu-usage-overall-20141226.ods">this LibreOffice spreadsheet</a>.</sup>
-</p>
-
-#### Blocking
-
-<p align="center">
-Being lean and efficient doesn't mean blocking less<br>
-<img src="https://raw.githubusercontent.com/gorhill/uBlock/master/doc/benchmarks/privex-201502-16.png" /><br>
-<sup>For details of benchmark, see 
-<a href="https://github.com/gorhill/uBlock/wiki/uBlock-and-others%3A-Blocking-ads%2C-trackers%2C-malwares">uBlock₀ and others: Blocking ads, trackers, malwares</a>.
-</p>
+For support, questions, or help, visit [/r/uBlockOrigin][Reddit].
 
 ## Installation
 
-Feel free to read [about the extension's required permissions](https://github.com/gorhill/uBlock/wiki/About-the-required-permissions).
+[Required Permissions][Permissions]
+
+#### Firefox
+
+[Firefox Add-ons][Mozilla]
+
+[Development Builds][Beta]
+
+uBO [works best][Works Best] on Firefox and is available for desktop and Android versions.
 
 #### Chromium
 
-You can install the latest version [manually](https://github.com/gorhill/uBlock/tree/master/dist#install), from the [Chrome Store](https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm), or from the [Opera store](https://addons.opera.com/en-gb/extensions/details/ublock/).
+Chrome Web Store: Removed on 2026-08-31
 
-It is expected that uBlock Origin is compatible with any Chromium-based browsers.
+[Microsoft Edge Add-ons][Edge] (Published by [Nicole Rolls][Nicole Rolls] until version 1.62. Ownership transfer at version 1.64.)
 
-**Important:** Chromium-based browsers do not relay [websocket connections](https://en.wikipedia.org/wiki/WebSocket) to the extension API. This means websites can use websocket connections to bypass uBO (or any other blocker). This can be remediated by installing uBO's companion extension [uBO-WebSocket](https://github.com/gorhill/uBO-WebSocket).
+[Opera Add-ons][Opera]
 
-#### Firefox / Firefox for Android
+uBO should be compatible with any Chromium-based browser.
 
-[Firefox Add-ons web site](https://addons.mozilla.org/addon/ublock-origin/). There is also a development version if you want to test uBlock Origin with the latest changes: see [_uBlock Origin Version History_](https://addons.mozilla.org/addon/ublock-origin/versions/beta)
+#### Thunderbird
 
-uBlock Origin is compatible with [SeaMonkey](http://www.seamonkey-project.org/), [Pale Moon](https://www.palemoon.org/), and possibly other browsers based on Firefox.
+[Thunderbird Add-ons][Thunderbird]
 
-The Firefox version of uBlock Origin has [an extra feature](https://github.com/gorhill/uBlock/wiki/Inline-script-tag-filtering) currently not yet available on Chromium-based browsers -- which feature is of great help to foil attempts by many web sites to circumvent blockers.
+In Thunderbird, uBlock Origin does not affect emails, just feeds.
 
-Also of interest: [Deploying uBlock Origin for Firefox with CCK2 and Group Policy](http://decentsecurity.com/ublock-for-firefox-deployment/).
+#### All Programs
 
-##### Debian/Ubuntu
+Do **NOT** use uBO with any other content blocker. uBO [performs][Performance] as well as or better than most popular blockers. Other blockers can prevent uBO's privacy or anti-blocker-defusing features from working correctly.
 
-Thanks to Debian contributor [Sean Whitton](https://wiki.debian.org/SeanWhitton), users of Debian 9 or later or Ubuntu 16.04 or later may simply
-`apt-get install xul-ext-ublock-origin`.
+[Manual Installation][Manual Installation]
 
-#### Microsoft Edge
+#### Enterprise Deployment
 
-Early development version by [@nikrolls](https://github.com/nikrolls): <https://github.com/nikrolls/uBlock-Edge#edge>.
-
-#### Note for all browsers
-
-To benefit from uBlock Origin's higher efficiency, it's advised that you don't use other inefficient blockers at the same time (such as AdBlock or Adblock Plus). uBlock₀ will do [as well or better](#blocking) than most popular ad blockers.
+[Deploying uBO][Deployment]
 
 ## Release History
 
-See the [releases pages](https://github.com/gorhill/uBlock/releases) for a history of releases and highlights for each release.
+[Releases Page][Releases]
+
+## Translations
+
+Help translate uBO via [Crowdin][Crowdin].
 
 ## About
 
-[uBlock Origin's manifesto](MANIFESTO.md).
+[Manifesto][Manifesto]
 
-Free. Open source. For users by users. No donations sought.
+[Privacy Policy][Privacy Policy]
 
-Without the preset lists of filters, this extension is nothing. So if ever you
-really do want to contribute something, think about the people working hard
-to maintain the filter lists you are using, which were made available to use by
-all for free.
+[GPLv3 License][License]
 
-You can contribute by helping translate uBlock₀ [on Crowdin](https://crowdin.net/project/ublock).
+Free. Open-source. For users by users. No donations sought.
 
-## License
+If you ever want to contribute something, think about the people working hard to maintain the filter lists you are using, which are available to use by all for free.
 
-[GPLv3](https://github.com/gorhill/uBlock/blob/master/LICENSE.txt).
+
+<!----------------------------------------------------------------------------->
+
+[Peter Lowe's Blocklist]: https://pgl.yoyo.org/adservers/
+[Malicious Blocklist]: https://gitlab.com/malware-filter/urlhaus-filter#malicious-url-blocklist
+[Performance]: https://www.debugbear.com/blog/chrome-extensions-website-performance#the-impact-of-ad-blocking-on-website-performance
+[EasyPrivacy]: https://easylist.to/#easyprivacy
+[Thunderbird]: https://addons.thunderbird.net/thunderbird/addon/ublock-origin/
+[EasyList]: https://easylist.to/#easylist
+[Mozilla]: https://addons.mozilla.org/addon/ublock-origin/
+[Crowdin]: https://crowdin.com/project/ublock
+[Reddit]: https://www.reddit.com/r/uBlockOrigin/
+[Theft]: https://x.com/LeaVerou/status/518154828166725632
+[Opera]: https://addons.opera.com/extensions/details/ublock/
+[Edge]: https://microsoftedge.microsoft.com/addons/detail/ublock-origin/odfafepnkmbhccpbejgmiehpchacaeak
+[NPM]: https://www.npmjs.com/package/@gorhill/ubo-core
+
+[Manifesto]: MANIFESTO.md
+[License]: LICENSE.txt
+
+[Nicole Rolls]: https://github.com/nicole-ashley
+
+<!---------------------------------[ Internal ]-------------------------------->
+
+[Manual Installation]: https://github.com/gorhill/uBlock/tree/master/dist#install
+[Extended Syntax]: https://github.com/gorhill/uBlock/wiki/Static-filter-syntax#extended-syntax
+[Privacy Policy]: https://github.com/gorhill/uBlock/wiki/Privacy-policy
+[uBO Filters]: https://github.com/uBlockOrigin/uAssets/tree/master/filters
+[Permissions]: https://github.com/gorhill/uBlock/wiki/Permissions
+[Commit Rate]: https://github.com/gorhill/uBlock/commits/master
+[Works Best]: https://github.com/gorhill/uBlock/wiki/uBlock-Origin-works-best-on-Firefox
+[Deployment]: https://github.com/gorhill/uBlock/wiki/Deploying-uBlock-Origin
+[Blocking]: https://github.com/gorhill/uBlock/wiki/Blocking-mode
+[Releases]: https://github.com/gorhill/uBlock/releases
+[Issues]: https://github.com/uBlockOrigin/uBlock-issues/issues
+[Beta]: https://github.com/gorhill/uBlock/blob/master/dist/README.md#for-beta-version
+[Wiki]: https://github.com/gorhill/uBlock/wiki
+
+<!----------------------------------[ Badges ]--------------------------------->
+
+[Badge Localization]: https://d322cqt584bo4o.cloudfront.net/ublock/localized.svg
+[Badge Commits]: https://img.shields.io/github/commit-activity/m/gorhill/ublock?label=Commits
+[Badge Mozilla]: https://img.shields.io/amo/rating/ublock-origin?label=Firefox
+[Badge License]: https://img.shields.io/badge/License-GPLv3-blue.svg
+[Badge Chrome]: https://img.shields.io/chrome-web-store/rating/cjpalhdlnbpafiamejdnhcphjbkeiagm?label=Chrome
+[Badge Edge]: https://img.shields.io/badge/dynamic/json?label=Edge&color=brightgreen&query=%24.averageRating&suffix=%2F%35&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fodfafepnkmbhccpbejgmiehpchacaeak
+[Badge Issues]: https://img.shields.io/github/issues/uBlockOrigin/uBlock-issues
+[Badge NPM]: https://img.shields.io/npm/v/@gorhill/ubo-core

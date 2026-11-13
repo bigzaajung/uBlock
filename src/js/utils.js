@@ -1,7 +1,7 @@
 /*******************************************************************************
 
-    uBlock Origin - a browser extension to block requests.
-    Copyright (C) 2014-2016 Raymond Hill
+    uBlock Origin - a comprehensive, efficient content blocker
+    Copyright (C) 2014-present Raymond Hill
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,124 +19,30 @@
     Home: https://github.com/gorhill/uBlock
 */
 
-'use strict';
+import µb from './background.js';
 
 /******************************************************************************/
 
-// A standalone URL tokenizer will allow us to use URL tokens in more than
-// just static filtering engine. This opens the door to optimize other
-// filtering engine parts aside static filtering. This also allows:
-// - Tokenize only on demand.
-// - To potentially avoid tokenizing when same URL is fed to tokenizer.
-//   - Benchmarking shows this to be a common occurrence.
-
-µBlock.urlTokenizer = {
-    setURL: function(url) {
-        if ( url !== this._urlIn ) {
-            this._urlIn = url;
-            this._urlOut = url.toLowerCase();
-            this._tokenized = false;
-        }
-        return this._urlOut;
-    },
-
-    // Tokenize on demand.
-    getTokens: function() {
-        if ( this._tokenized === false ) {
-            if ( this._gcAfter === undefined ) {
-                this._gcAfter = Date.now() + 1499;
-            }
-            this._tokenize();
-            this._tokenized = true;
-        }
-        return this._tokens;
-    },
-
-    isTokenized: function() {
-        return this._tokens !== null && this._tokens[0].token !== '';
-    },
-
-    _Entry: function() {
-        this.beg = 0;
-        this.token = undefined;
-    },
-
-    // https://github.com/chrisaljoudi/uBlock/issues/1118
-    // We limit to a maximum number of tokens.
-    _init: function() {
-        this._tokens = new Array(2048);
-        for ( var i = 0; i < 2048; i++ ) {
-            this._tokens[i] = new this._Entry();
-        }
-        this._init = null;
-    },
-
-    _tokenize: function() {
-        var tokens = this._tokens,
-            re = this._reAnyToken,
-            url = this._urlOut;
-        var matches, entry;
-        re.lastIndex = 0;
-        for ( var i = 0; i < 2047; i++ ) {
-            matches = re.exec(url);
-            if ( matches === null ) { break; }
-            entry = tokens[i];
-            entry.beg = matches.index;
-            entry.token = matches[0];
-        }
-        tokens[i].token = ''; // Sentinel
-        // Could no-longer-used-but-still-referenced string fragments 
-        // contribute to memory fragmentation in the long-term? The code below
-        // is to address this: left over unused string fragments are removed at
-        // regular interval.
-        if ( Date.now() < this._gcAfter ) { return; }
-        this._gcAfter = undefined;
-        for ( i += 1; i < 2047; i++ ) {
-            entry = tokens[i];
-            if ( entry.token === undefined ) { break; }
-            entry.token = undefined;
-        }
-    },
-
-    _urlIn: '',
-    _urlOut: '',
-    _tokenized: false,
-    _tokens: null,
-    _reAnyToken: /[%0-9a-z]+/g,
-    _gcAfter: undefined
+µb.formatCount = function(count) {
+    if ( typeof count !== 'number' ) { return ''; }
+    const s = `${count}`;
+    if ( count < 1000 ) { return s; }
+    if ( count < 10000 ) {
+        return '>' + s.slice(0,1) + 'k';
+    }
+    if ( count < 100000 ) {
+        return s.slice(0,2) + 'k';
+    }
+    if ( count < 1000000 ) {
+        return s.slice(0,3) + 'k';
+    }
+    return s.slice(0,-6) + 'M';
 };
 
-µBlock.urlTokenizer._init();
-
 /******************************************************************************/
 
-µBlock.formatCount = function(count) {
-    if ( typeof count !== 'number' ) {
-        return '';
-    }
-    var s = count.toFixed(0);
-    if ( count >= 1000 ) {
-        if ( count < 10000 ) {
-            s = '>' + s.slice(0,1) + 'k';
-        } else if ( count < 100000 ) {
-            s = s.slice(0,2) + 'k';
-        } else if ( count < 1000000 ) {
-            s = s.slice(0,3) + 'k';
-        } else if ( count < 10000000 ) {
-            s = s.slice(0,1) + 'M';
-        } else {
-            s = s.slice(0,-6) + 'M';
-        }
-    }
-    return s;
-};
-
-// https://www.youtube.com/watch?v=DyvzfyqYm_s
-
-/******************************************************************************/
-
-µBlock.dateNowToSensibleString = function() {
-    var now = new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000);
+µb.dateNowToSensibleString = function() {
+    const now = new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000);
     return now.toISOString().replace(/\.\d+Z$/, '')
                             .replace(/:/g, '.')
                             .replace('T', '_');
@@ -144,94 +50,7 @@
 
 /******************************************************************************/
 
-µBlock.LineIterator = function(text, offset) {
-    this.text = text;
-    this.textLen = this.text.length;
-    this.offset = offset || 0;
-};
-
-µBlock.LineIterator.prototype.next = function() {
-    var lineEnd = this.text.indexOf('\n', this.offset);
-    if ( lineEnd === -1 ) {
-        lineEnd = this.text.indexOf('\r', this.offset);
-        if ( lineEnd === -1 ) {
-            lineEnd = this.textLen;
-        }
-    }
-    var line = this.text.slice(this.offset, lineEnd);
-    this.offset = lineEnd + 1;
-    return line;
-};
-
-µBlock.LineIterator.prototype.eot = function() {
-    return this.offset >= this.textLen;
-};
-
-/******************************************************************************/
-
-// The field iterator is less CPU-intensive than when using native
-// String.split().
-
-µBlock.FieldIterator = function(sep) {
-    this.text = '';
-    this.sep = sep;
-    this.sepLen = sep.length;
-    this.offset = 0;
-};
-
-µBlock.FieldIterator.prototype.first = function(text) {
-    this.text = text;
-    this.offset = 0;
-    return this.next();
-};
-
-µBlock.FieldIterator.prototype.next = function() {
-    var end = this.text.indexOf(this.sep, this.offset);
-    if ( end === -1 ) {
-        end = this.text.length;
-    }
-    var field = this.text.slice(this.offset, end);
-    this.offset = end + this.sepLen;
-    return field;
-};
-
-/******************************************************************************/
-
-µBlock.mapToArray = function(map) {
-    var out = [],
-        entries = map.entries(),
-        entry;
-    for (;;) {
-        entry = entries.next();
-        if ( entry.done ) { break; }
-        out.push([ entry.value[0], entry.value[1] ]);
-    }
-    return out;
-};
-
-µBlock.mapFromArray = function(arr) {
-    return new Map(arr);
-};
-
-µBlock.setToArray = function(dict) {
-    var out = [],
-        entries = dict.values(),
-        entry;
-    for (;;) {
-        entry = entries.next();
-        if ( entry.done ) { break; }
-        out.push(entry.value);
-    }
-    return out;
-};
-
-µBlock.setFromArray = function(arr) {
-    return new Set(arr);
-};
-
-/******************************************************************************/
-
-µBlock.openNewTab = function(details) {
+µb.openNewTab = function(details) {
     if ( details.url.startsWith('logger-ui.html') ) {
         if ( details.shiftKey ) {
             this.changeUserSettings(
@@ -239,9 +58,75 @@
                 !this.userSettings.alwaysDetachLogger
             );
         }
-        details.popup = this.userSettings.alwaysDetachLogger;
+        if ( this.userSettings.alwaysDetachLogger ) {
+            details.popup = this.hiddenSettings.loggerPopupType;
+            const url = new URL(vAPI.getURL(details.url));
+            url.searchParams.set('popup', '1');
+            details.url = url.href;
+            let popupLoggerBox;
+            try {
+                popupLoggerBox = JSON.parse(
+                    vAPI.localStorage.getItem('popupLoggerBox')
+                );
+            } catch {
+            }
+            if ( popupLoggerBox !== undefined ) {
+                details.box = popupLoggerBox;
+            }
+        }
     }
     vAPI.tabs.open(details);
 };
 
 /******************************************************************************/
+
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions
+
+µb.escapeRegex = function(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+/******************************************************************************/
+
+// TODO: properly compare arrays
+
+µb.getModifiedSettings = function(edit, orig = {}) {
+    const out = {};
+    for ( const prop in edit ) {
+        if ( Object.hasOwn(orig, prop) && edit[prop] !== orig[prop] ) {
+            out[prop] = edit[prop];
+        }
+    }
+    return out;
+};
+
+µb.settingValueFromString = function(orig, name, s) {
+    if ( typeof name !== 'string' || typeof s !== 'string' ) { return; }
+    if ( Object.hasOwn(orig, name) === false ) { return; }
+    let r;
+    switch ( typeof orig[name] ) {
+    case 'boolean':
+        if ( s === 'true' ) {
+            r = true;
+        } else if ( s === 'false' ) {
+            r = false;
+        }
+        break;
+    case 'string':
+        r = s.trim();
+        break;
+    case 'number':
+        if ( s.startsWith('0b') ) {
+            r = parseInt(s.slice(2), 2);
+        } else if ( s.startsWith('0x') ) {
+            r = parseInt(s.slice(2), 16);
+        } else {
+            r = parseInt(s, 10);
+        }
+        if ( isNaN(r) ) { r = undefined; }
+        break;
+    default:
+        break;
+    }
+    return r;
+};
